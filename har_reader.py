@@ -5,22 +5,29 @@ from har import Har
 from aqualab.plot.mCdf import keyedCdf
 from dnshar import get_hostname
 
+test_data_path = 'C:/Users/Andrew/OneDrive/Documents/Northwestern/Research/mobile_ads/ISE-project/data/4G-NU-false'
+
 def plot_object_size_distribution():
 
     objs = []
-    for fname in os.listdir('har_data'):
+    for fname in os.listdir(test_data_path):
         print fname
 
-        if not fname.startswith('4g'): continue
+        #if not fname.startswith('4g'): continue
         
-        site = Har('har_data/%s'%fname)
+        site = Har(os.path.join(test_data_path, fname))
         
-        onload = float(site.pages[0]['pageTimings']['onLoad'])
+        try:
+            onload = float(site.pages[0]['pageTimings']['onLoad'])
+        except Exception as e:
+            print("No onload time: " + str(e))
+
         page_start_time = datetime.strptime(site.pages[0]['startedDateTime'], '%Y-%m-%dT%H:%M:%S.%fZ')
         onload_time = page_start_time + timedelta(seconds=(onload/1000.0))
         
         request_count = 0
         page_size = 0
+        content_size = 0
 
         for entry in site.entries:
             
@@ -31,10 +38,11 @@ def plot_object_size_distribution():
 
             request_count += 1
             page_size += entry.response.bodySize
+            content_size += entry.response.contentSize
             
             objs.append(entry.response.bodySize)
 
-        print fname, request_count, page_size
+        print fname, request_count, page_size, content_size
         
     cdf = keyedCdf(baseName='obj_size_cdf', xlabel='Size (bytes)')
     for o in objs:
@@ -44,11 +52,11 @@ def plot_object_size_distribution():
 def get_object_distribution():
     hosts = {} #[host] : (name, size)
 
-    for fname in os.listdir('C:\Users\Andrew\OneDrive\Documents\Northwestern\Research\mobile_ads\ISE-project\data\4G-NU-false'):
+    for fname in os.listdir(test_data_path):
         print fname
-        if not fname.startswith('4g'): continue
+        #if not fname.startswith('4g'): continue
 
-        site = Har('har_data/%s'%fname)
+        site = Har(os.path.join(test_data_path, fname))
         
         url = site.entries[0].request.url
 
@@ -56,8 +64,10 @@ def get_object_distribution():
 
         hosts[url] = []
             
-    
-        onload = float(site.pages[0]['pageTimings']['onLoad'])
+        try:
+            onload = float(site.pages[0]['pageTimings']['onLoad'])
+        except Exception as e:
+            print("No onload time: " + str(e))
         page_start_time = datetime.strptime(site.pages[0]['startedDateTime'], '%Y-%m-%dT%H:%M:%S.%fZ')
         onload_time = page_start_time + timedelta(seconds=(onload/1000.0))
         
@@ -80,7 +90,7 @@ def get_object_distribution():
 
 
 if __name__ == '__main__':
-    #plot_object_size_distribution()
+    plot_object_size_distribution()
     obj_dict = get_object_distribution()
 
     for host in obj_dict:

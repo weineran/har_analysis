@@ -27,7 +27,7 @@ def get_hostname(url):
     else:
         return None
 
-    return url.split('/', 1)[0]    
+    return url.split('/', 1)[0]
 
 
 if __name__ == '__main__':

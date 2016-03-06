@@ -2,6 +2,17 @@ import json
 from datetime import datetime
 
 
+def get_hostname(url):
+    
+    if url.startswith('https'):
+        url = url[8:]
+    elif url.startswith('http'):
+        url = url[7:]
+    else:
+        return None
+
+    return url.split('/', 1)[0]
+
 class Har(object):
     '''
     entries
