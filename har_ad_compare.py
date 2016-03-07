@@ -59,7 +59,7 @@ def get_key_stats(har_obj):
     return key_stats
 
 
-def compare_hars(comparisons_dict, h_yesBlock, h_noBlock, dirname_yesBlock, dirname_noBlock, data_path, network):
+def compare_hars(h_yesBlock, h_noBlock, dirname_yesBlock, dirname_noBlock, data_path, network):
     title_noBlock = h_noBlock.pages[0]['title']
     title_yesBlock = h_yesBlock.pages[0]['title']
     print(title_noBlock + '\t' + title_yesBlock)
@@ -70,6 +70,11 @@ def compare_hars(comparisons_dict, h_yesBlock, h_noBlock, dirname_yesBlock, dirn
     keyStats_noBlock = get_key_stats(h_noBlock)
     keyStats_yesBlock = get_key_stats(h_yesBlock)
 
+    if title_noBlock == 'http://news.yahoo.com/':
+        print(title_noBlock)
+        print(str(keyStats_noBlock))
+        print(str(keyStats_yesBlock))
+
     for attr in keyStats_noBlock:
         try:
             results[attr] = keyStats_noBlock[attr] - keyStats_yesBlock[attr]
@@ -77,10 +82,11 @@ def compare_hars(comparisons_dict, h_yesBlock, h_noBlock, dirname_yesBlock, dirn
                 results[attr+"_%"] = (float(results[attr]) / float(keyStats_noBlock[attr]))*100
             except ZeroDivisionError as zde:
                 print("FAILED percent comparison: "+str(attr+"_%")+str(results[attr])+', '+str(keyStats_noBlock[attr]))
-        except TypeError  as e:
+        except TypeError as e:
             print("FAILED comparison of : "+str(attr)+str(keyStats_noBlock[attr])+', '+str(keyStats_yesBlock[attr]))
     
-    comparisons_dict[title_noBlock] = results
+    #comparisons_dict[title_noBlock] = results
+    return results
 
 
 def get_network_from_dirname(dirname):
@@ -92,7 +98,17 @@ def get_network_from_dirname(dirname):
 
     return network
 
-def find_matching_yesBlock_file(title_noBlock, fname_noBlock, file_list_yesBlock, data_path, dirname_yesBlock, yesBlock_failures):
+def get_location_from_dirname(dirname):
+    location = ""
+    if "ANDREWHOME" in dirname.upper(): location = "AndrewHome"
+    elif "JAMESHOME" in dirname.upper(): location = "JamesHome"
+    elif "NU" in dirname.upper(): location = "NU"
+    else: location = "Other"
+
+    return location
+
+
+def find_matching_yesBlock_file(title_noBlock, fname_noBlock, file_list_yesBlock, data_path, dirname_yesBlock, yesBlock_failures, yesBlock_finder):
     for fname_yesBlock in file_list_yesBlock:
     # do linear search on filenames
         # If we already know the har can't be loaded, skip it
@@ -105,12 +121,12 @@ def find_matching_yesBlock_file(title_noBlock, fname_noBlock, file_list_yesBlock
         # get har for yesBlock file
         try:
             h_yesBlock = Har(full_path_yesBlock)
-            title_yesBlock =  h_yesBlock.pages[0]['title']
-            yesBlock_finder[title_yesBlock] = fname_yesBlock     # store in dict for future searches
         except Exception as e:
             #print 'skipped yesBlock ' + fname_yesBlock + '. ' + str(e)
             yesBlock_failures[fname_yesBlock] = True
         else:
+            title_yesBlock =  h_yesBlock.pages[0]['title']
+            yesBlock_finder[title_yesBlock] = fname_yesBlock     # store in dict for future searches
             if title_yesBlock == title_noBlock or fname_yesBlock == fname_noBlock:
                 return h_yesBlock
 
@@ -150,6 +166,7 @@ if __name__ == '__main__':
             #print('----'+dirname_noBlock+'\t'+dirname_yesBlock+'----')  # Print directory pairs to check that they look right
 
             network = get_network_from_dirname(dirname_noBlock)
+            location = get_location_from_dirname(dirname_noBlock)
 
             file_list_noBlock = os.listdir(os.path.join(data_path,dirname_noBlock))
             file_list_yesBlock = os.listdir(os.path.join(data_path,dirname_yesBlock))
@@ -175,12 +192,12 @@ if __name__ == '__main__':
                 title_noBlock = h_noBlock.pages[0]['title']
 
                 # find matching yesBlock file
-                #print('Searching for a match for noBlock file: '+file_noBlock)
+                print('Searching for a match for noBlock file: '+file_noBlock+", network: "+network)
                 try:
                     # first look in our dictionary
                     file_yesBlock = yesBlock_finder[title_noBlock]
                 except KeyError as e_key:
-                    h_yesBlock = find_matching_yesBlock_file(title_noBlock, file_noBlock, file_list_yesBlock, data_path, dirname_yesBlock, yesBlock_failures)
+                    h_yesBlock = find_matching_yesBlock_file(title_noBlock, file_noBlock, file_list_yesBlock, data_path, dirname_yesBlock, yesBlock_failures, yesBlock_finder)
                 else:
                     h_yesBlock = Har(os.path.join(data_path, dirname_yesBlock, file_yesBlock))
                 
@@ -189,7 +206,7 @@ if __name__ == '__main__':
                     num_failed_matches += 1
                     failed_match_list.append(dirname_noBlock+'/'+file_noBlock)
                 else:
-                    compare_hars(comparisons_dict, h_yesBlock, h_noBlock, dirname_yesBlock, dirname_noBlock, data_path, network)
+                    comparisons_dict[title_noBlock+"_"+network+"_"+location] = compare_hars(h_yesBlock, h_noBlock, dirname_yesBlock, dirname_noBlock, data_path, network)
                     num_matches += 1
 
         print("num_matches: "+str(num_matches))
@@ -208,44 +225,61 @@ if __name__ == '__main__':
     #cdf_contentSize = keyedCdf(baseName='content_size_cdf', xlabel='contentSize_noBlock - contentSize_yesBlock (bytes)')
 
     cdf_list = []
+    cdf_meta_info = {}
 
     for attr in comparisons_dict[comparisons_dict.keys()[0]]:
-        attr = str(attr)
-        if attr == 'network': continue
+        attr = str(attr)    # convert from unicode
+        if attr == 'network': continue  # skip network attribute
         cdf = keyedCdf(baseName=attr, xlabel=attr)
+
+        cdf_meta_info[attr] = {'Wifi': [], '4G': [], 'wired': [], 'Other': []}
 
         count_wifi = 0
         count_4g = 0
         count_wired = 0
+        count_other = 0
 
-        print("RESULTS")
+        print("RESULTS "+attr)
         for page_title in comparisons_dict:
             print(page_title)
 
             try:
                 data_point = comparisons_dict[page_title][attr]
             except KeyError:
+                print("FAILED to find comparisons_dict['"+page_title+"']['"+attr+"']")
                 continue
 
-            if comparisons_dict[page_title]['network'] == "WiFi":
+            if str(comparisons_dict[page_title]['network']) == "WiFi":
                 cdf.insert('WiFi', data_point)
                 count_wifi += 1
-            elif comparisons_dict[page_title]['network'] == "4G":
+                cdf_meta_info[attr]['Wifi'].append((page_title, data_point))
+            elif str(comparisons_dict[page_title]['network']) == "4G":
                 cdf.insert('4G', data_point)
                 count_4g += 1
-            elif comparisons_dict[page_title]['network'] == "wired":
+                cdf_meta_info[attr]['4G'].append((page_title, data_point))
+            elif str(comparisons_dict[page_title]['network']) == "wired":
                 cdf.insert('wired', data_point)
                 count_wired += 1
+                cdf_meta_info[attr]['wired'].append((page_title, data_point))
+            else:
+                cdf.inster('Other', data_point)
+                count_other += 1
+                cdf_meta_info[attr]['Other'].append((page_title, data_point))
 
             print(str(comparisons_dict[page_title]['network'])+" "+attr+ ": "+str(comparisons_dict[page_title][attr]))
         
         cdf_list.append(cdf)
         #cdf.plot('logscalex', plotdir='figs', xlim=[-1000000,1000000])
-        cdf.plot(plotdir='figs')
+        plot_title = 'wifi n='+str(count_wifi)+', 4g n='+str(count_4g)+', wired n='+str(count_wired)
+        cdf.plot(plotdir='figs', title=plot_title)
 
         print("wifi: "+str(count_wifi))
         print("4g: "+str(count_4g))
         print("wired: "+str(count_wired))
+        print("Other: "+str(count_other))
+        print(str(cdf_meta_info[attr]))
+
+
 
     
 
